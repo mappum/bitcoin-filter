@@ -17,6 +17,7 @@ function Filter (peers, opts) {
   }
   EventEmitter.call(this)
 
+  opts = opts || {}
   this._peers = peers
   this._targetFPRate = opts.falsePositiveRate || 0.01
   this._resizeThreshold = opts.resizeThreshold || 0.6
@@ -28,6 +29,10 @@ function Filter (peers, opts) {
   setImmediate(() => {
     debug(`sending initial filter: elements:${this._count}`)
     this._resize()
+    peers.on('peer', (peer) => {
+      debug(`sending "filterload" to peer: ${peer.socket.remoteAddress}`)
+      peer.send('filterload', this._getPayload(), false)
+    })
     this.emit('init')
   })
 }
@@ -40,6 +45,7 @@ Filter.prototype.add = function (value) {
   } else {
     this._addFilterable(value)
   }
+  this._maybeResize()
 }
 
 Filter.prototype.remove = function (value) {
@@ -67,25 +73,21 @@ Filter.prototype._addFilterable = function (filterable) {
 }
 
 Filter.prototype._addElement = function (data, send) {
-  send = send == null
+  send = send == null ? true : send
   this._count++
-
-  var fpRate = this._falsePositiveRate()
-  var threshold = this._resizeThreshold * this._targetFPRate
-  if (fpRate - this._targetFPRate >= threshold) {
-    debug(`resizing: fp=${fpRate}, target=${this._targetFPRate}`)
-    return this._resize()
-  }
 
   if (!this._filter) return
   this._filter.insert(data)
-  if (!send) return
-  debug(`sending "filteradd": ${data.toString('hex')}`)
-  this._peers.send('filteradd', { data })
+
+  if (send) {
+    debug(`sending "filteradd": ${data.toString('hex')}`)
+    this._peers.send('filteradd', { data }, false)
+  }
 }
 
 Filter.prototype._falsePositiveRate = function () {
-  return fpRate(this._filter.vData.length * 8, this._filter.nHashFuncs, this._count)
+  return fpRate(this._filter.vData.length * 8,
+    this._filter.nHashFuncs, this._count)
 }
 
 Filter.prototype._getPayload = function () {
@@ -93,6 +95,16 @@ Filter.prototype._getPayload = function () {
   output.data = new Buffer(output.vData)
   delete output.vData
   return output
+}
+
+Filter.prototype._maybeResize = function () {
+  if (!this._filter) return
+  var fpRate = this._falsePositiveRate()
+  var threshold = this._resizeThreshold * this._targetFPRate
+  if (fpRate - this._targetFPRate >= threshold) {
+    debug(`resizing: fp=${fpRate}, target=${this._targetFPRate}`)
+    this._resize()
+  }
 }
 
 Filter.prototype._resize = function () {
@@ -104,7 +116,7 @@ Filter.prototype._resize = function () {
     if (!elements) continue
     for (let element of elements) this._addElement(element, false)
   }
-  this._peers.send('filterload', this._getPayload())
+  this._peers.send('filterload', this._getPayload(), false)
 }
 
 module.exports = Filter
