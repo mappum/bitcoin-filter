@@ -57,9 +57,11 @@ Filter.prototype.remove = function (value) {
 }
 
 Filter.prototype._addStaticElement = function (data) {
-  this._elements.push(data)
-  this._addElement(data)
-  debug(`static element added: ${data.toString('hex')}`)
+  var element = Buffer(data.length)
+  data.copy(element)
+  this._elements.push(element)
+  this._addElement(element)
+  debug(`static element added: ${element.toString('hex')}`)
 }
 
 Filter.prototype._addFilterable = function (filterable) {
