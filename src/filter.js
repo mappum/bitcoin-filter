@@ -19,7 +19,7 @@ function Filter (peers, opts) {
 
   opts = opts || {}
   this._peers = peers
-  this._targetFPRate = opts.falsePositiveRate || 0.01
+  this._targetFPRate = opts.falsePositiveRate || 0.001
   this._resizeThreshold = opts.resizeThreshold || 0.6
   this._elements = []
   this._filterables = []
@@ -31,7 +31,7 @@ function Filter (peers, opts) {
     this._resize()
     peers.on('peer', (peer) => {
       debug(`sending "filterload" to peer: ${peer.socket.remoteAddress}`)
-      peer.send('filterload', this._getPayload(), false)
+      peer.send('filterload', this._getPayload())
     })
     this.emit('init')
   })
@@ -68,6 +68,9 @@ Filter.prototype._addFilterable = function (filterable) {
   this._filterables.push(filterable)
   filterable.on('filteradd', this._addElement.bind(this))
   var elements = filterable.filterElements()
+  if (elements && !Array.isArray(elements)) {
+    throw new Error('"filterElements()" must return an array of Buffers or null/undefined')
+  }
   if (elements) {
     for (var element of elements) this._addElement(element)
   }
@@ -89,13 +92,12 @@ Filter.prototype._addElement = function (data, send) {
 
 Filter.prototype._falsePositiveRate = function () {
   return fpRate(this._filter.vData.length * 8,
-    this._filter.nHashFuncs, this._count)
+    this._filter.nHashFuncs, Math.max(this._count, 10))
 }
 
 Filter.prototype._getPayload = function () {
   var output = this._filter.toObject()
-  output.data = new Buffer(output.vData)
-  delete output.vData
+  output.data = output.vData
   return output
 }
 
@@ -110,7 +112,7 @@ Filter.prototype._maybeResize = function () {
 }
 
 Filter.prototype._resize = function () {
-  this._filter = createFilter(this._count, this._targetFPRate)
+  this._filter = createFilter(Math.max(this._count, 10), this._targetFPRate)
   this._count = 0
   for (let element of this._elements) this._addElement(element, false)
   for (let filterable of this._filterables) {
