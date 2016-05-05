@@ -1,6 +1,7 @@
 'use strict'
 
 const EventEmitter = require('events')
+const async = require('async')
 const createFilter = require('bloom-filter').create
 const debug = require('debug')('bitcoin-filter')
 const inherits = require('inherits')
@@ -28,7 +29,7 @@ function Filter (peers, opts) {
 
   setImmediate(() => {
     debug(`sending initial filter: elements:${this._count}`)
-    this._resize()
+    this._resize(this._error.bind(this))
     peers.on('peer', (peer) => {
       debug(`sending "filterload" to peer: ${peer.socket.remoteAddress}`)
       peer.send('filterload', this._getPayload())
@@ -38,6 +39,10 @@ function Filter (peers, opts) {
 }
 
 inherits(Filter, EventEmitter)
+
+Filter.prototype._error = function (err) {
+  if (err) this.emit('error', err)
+}
 
 Filter.prototype.add = function (value) {
   if (Buffer.isBuffer(value)) {
@@ -64,17 +69,26 @@ Filter.prototype._addStaticElement = function (data) {
   debug(`static element added: ${element.toString('hex')}`)
 }
 
-Filter.prototype._addFilterable = function (filterable) {
+Filter.prototype._addFilterable = function (filterable, cb) {
   this._filterables.push(filterable)
   filterable.on('filteradd', this._addElement.bind(this))
-  var elements = filterable.filterElements()
-  if (elements && !Array.isArray(elements)) {
-    throw new Error('"filterElements()" must return an array of Buffers or null/undefined')
+  this._addFilterableElements(filterable, cb)
+}
+
+Filter.prototype._addFilterableElements = function (filterable, cb) {
+  var done = false
+  var addElements = (elements) => {
+    if (done) return
+    if (!elements) return
+    if (elements && !Array.isArray(elements)) {
+      throw new Error('"filterElements()" must return an array of Buffers or null/undefined')
+    }
+    this._addElements(elements, false)
+    done = true
+    debug(`initial filterable elements added:${elements ? elements.length : 0}`)
+    if (cb) cb(null, elements)
   }
-  if (elements) {
-    for (var element of elements) this._addElement(element)
-  }
-  debug(`filterable added: initial elements:${elements ? elements.length : 0}`)
+  addElements(filterable.filterElements(addElements))
 }
 
 Filter.prototype._addElement = function (data, send) {
@@ -107,20 +121,26 @@ Filter.prototype._maybeResize = function () {
   var threshold = this._resizeThreshold * this._targetFPRate
   if (fpRate - this._targetFPRate >= threshold) {
     debug(`resizing: fp=${fpRate}, target=${this._targetFPRate}`)
-    this._resize()
+    this._resize(this._error.bind(this))
   }
 }
 
-Filter.prototype._resize = function () {
+Filter.prototype._addElements = function (elements, send) {
+  for (let element of elements) this._addElement(element, send)
+}
+
+Filter.prototype._resize = function (cb) {
   this._filter = createFilter(Math.max(this._count, 10), this._targetFPRate)
   this._count = 0
-  for (let element of this._elements) this._addElement(element, false)
-  for (let filterable of this._filterables) {
-    var elements = filterable.filterElements()
-    if (!elements) continue
-    for (let element of elements) this._addElement(element, false)
-  }
-  this._peers.send('filterload', this._getPayload(), false)
+  this._addElements(this._elements, false)
+
+  var filterables = this._filterables
+  this._filterables = []
+  async.each(filterables, this._addFilterableElements.bind(this), (err) => {
+    if (err) return cb(err)
+    this._peers.send('filterload', this._getPayload(), false)
+    cb(null)
+  })
 }
 
 module.exports = Filter
