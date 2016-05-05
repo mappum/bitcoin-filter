@@ -71,7 +71,13 @@ Filter.prototype._addStaticElement = function (data) {
 
 Filter.prototype._addFilterable = function (filterable, cb) {
   this._filterables.push(filterable)
-  filterable.on('filteradd', this._addElement.bind(this))
+  filterable.on('filteradd', (data) => {
+    if (Array.isArray(data)) {
+      for (var element of data) this._addElement(element)
+    } else {
+      this._addElement(data)
+    }
+  })
   this._addFilterableElements(filterable, cb)
 }
 
