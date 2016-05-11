@@ -1,6 +1,6 @@
 {
   "name": "bitcoin-filter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bitcoin connection Bloom filtering (BIP37)",
   "main": "index.js",
   "scripts": {
