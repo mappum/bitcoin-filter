@@ -21,13 +21,15 @@ function Filter (peers, opts) {
   opts = opts || {}
   this._peers = peers
   this._targetFPRate = opts.falsePositiveRate || 0.001
-  this._resizeThreshold = opts.resizeThreshold || 0.6
+  this._resizeThreshold = opts.resizeThreshold || 0.4
   this._elements = []
   this._filterables = []
   this._count = 0
   this._filter = null
+  this.initialized = false
 
   setImmediate(() => {
+    this.initialized = true
     debug(`sending initial filter: elements:${this._count}`)
     this._resize(this._error.bind(this))
     peers.on('peer', (peer) => {
@@ -82,12 +84,16 @@ Filter.prototype._addFilterable = function (filterable, cb) {
 }
 
 Filter.prototype._addFilterableElements = function (filterable, cb) {
+  if (!this.initialized) {
+    if (cb) cb(null)
+    return
+  }
   var done = false
   var addElements = (elements) => {
     if (done) return
     if (!elements) return
     if (elements && !Array.isArray(elements)) {
-      throw new Error('"filterElements()" must return an array of Buffers or null/undefined')
+      return cb(new Error('"filterElements()" must return an array of Buffers or null/undefined'))
     }
     this._addElements(elements, false)
     done = true
@@ -112,7 +118,7 @@ Filter.prototype._addElement = function (data, send) {
 
 Filter.prototype._falsePositiveRate = function () {
   return fpRate(this._filter.vData.length * 8,
-    this._filter.nHashFuncs, Math.max(this._count, 10))
+    this._filter.nHashFuncs, Math.max(this._count, 100))
 }
 
 Filter.prototype._getPayload = function () {
@@ -136,7 +142,7 @@ Filter.prototype._addElements = function (elements, send) {
 }
 
 Filter.prototype._resize = function (cb) {
-  this._filter = createFilter(Math.max(this._count, 10), this._targetFPRate)
+  this._filter = createFilter(Math.max(this._count, 100), this._targetFPRate)
   this._count = 0
   this._addElements(this._elements, false)
 
