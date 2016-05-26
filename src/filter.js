@@ -71,7 +71,7 @@ Filter.prototype._addStaticElement = function (data, cb) {
   this._elements.push(element)
   this._addElement(element)
   debug(`static element added: ${element.toString('hex')}`)
-  if (cb) cb(null)
+  cb(null)
 }
 
 Filter.prototype._addFilterable = function (filterable, cb) {
