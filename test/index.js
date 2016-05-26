@@ -96,7 +96,7 @@ test('adding Buffer elements', function (t) {
   })
 
   t.test('add with callback', function (t) {
-    f.add(new Buffer('test'), (err) => {
+    f.add(new Buffer('test'), function (err) {
       t.pass('callback called')
       t.error(err, 'no error')
       t.end()
@@ -124,7 +124,7 @@ test('Filterables', function (t) {
     t.test('add filterable with invalid initial elements', function (t) {
       var filterable = new EventEmitter()
       filterable.filterElements = function () { return 'test' }
-      f.add(filterable, (err) => {
+      f.add(filterable, function (err) {
         t.pass('callback called')
         t.ok(err, 'err returned to callback')
         t.equal(err.message, '"filterElements()" must return an array of Buffers or null/undefined', 'correct error message')
@@ -137,7 +137,7 @@ test('Filterables', function (t) {
     t.test('add filterable with null initial elements', function (t) {
       var filterable = new EventEmitter()
       filterable.filterElements = function () { return null }
-      f.add(filterable, (err) => {
+      f.add(filterable, function (err) {
         t.pass('callback called')
         t.error(err, 'no err returned to callback')
         nFilterables++
