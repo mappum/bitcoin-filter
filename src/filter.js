@@ -37,6 +37,7 @@ function Filter (peers, opts) {
       peer.send('filterload', this._getPayload())
     })
     this.emit('init')
+    this.emit('ready')
   })
 }
 
@@ -46,13 +47,14 @@ Filter.prototype._error = function (err) {
   if (err) this.emit('error', err)
 }
 
-Filter.prototype.add = function (value) {
-  if (Buffer.isBuffer(value)) {
-    this._addStaticElement(value)
-  } else {
-    this._addFilterable(value)
-  }
-  this._maybeResize()
+Filter.prototype.add = function (value, cb) {
+  cb = cb || this._error.bind(this)
+  var add = Buffer.isBuffer(value)
+    ? this._addStaticElement : this._addFilterable
+  add.call(this, value, (err) => {
+    if (err) return cb(err)
+    this._maybeResize(cb)
+  })
 }
 
 Filter.prototype.remove = function (value) {
@@ -63,44 +65,61 @@ Filter.prototype.remove = function (value) {
   }
 }
 
-Filter.prototype._addStaticElement = function (data) {
+Filter.prototype._addStaticElement = function (data, cb) {
   var element = Buffer(data.length)
   data.copy(element)
   this._elements.push(element)
   this._addElement(element)
   debug(`static element added: ${element.toString('hex')}`)
+  if (cb) cb(null)
 }
 
 Filter.prototype._addFilterable = function (filterable, cb) {
-  this._filterables.push(filterable)
-  filterable.on('filteradd', (data) => {
-    if (Array.isArray(data)) {
-      for (var element of data) this._addElement(element)
-    } else {
-      this._addElement(data)
-    }
+  this._addFilterableElements(filterable, (err) => {
+    if (err) return cb(err)
+    this._filterables.push(filterable)
+    filterable.on('filteradd', (data) => {
+      if (Array.isArray(data)) {
+        for (var element of data) this._addElement(element)
+      } else {
+        this._addElement(data)
+      }
+    })
+    cb(null)
   })
-  this._addFilterableElements(filterable, cb)
 }
 
 Filter.prototype._addFilterableElements = function (filterable, cb) {
   if (!this.initialized) {
-    if (cb) cb(null)
+    cb(null)
     return
   }
-  var done = false
-  var addElements = (elements) => {
-    if (done) return
-    if (!elements) return
+  var called = false
+  var done = (err, elements) => {
+    called = true
+    cb(err, elements)
+  }
+  var addElements = (err, elements, sync) => {
+    if (called) {
+      if (err) return this._error(err)
+      return this._error(new Error('Filterable#filterElements() returned elements via both async cb and sync return'))
+    }
+    if (err) return done(err)
+    if (!elements) {
+      if (elements === null || !sync) done(null)
+      return
+    }
     if (elements && !Array.isArray(elements)) {
-      return cb(new Error('"filterElements()" must return an array of Buffers or null/undefined'))
+      return done(new Error('"filterElements()" must return an array of Buffers or null/undefined'))
     }
     this._addElements(elements, false)
-    done = true
     debug(`initial filterable elements added:${elements ? elements.length : 0}`)
-    if (cb) cb(null, elements)
+    return done(null, elements)
   }
-  addElements(filterable.filterElements(addElements))
+  var asyncAddElements = (...args) => {
+    setImmediate(() => addElements(...args))
+  }
+  addElements(null, filterable.filterElements(asyncAddElements), true)
 }
 
 Filter.prototype._addElement = function (data, send) {
@@ -124,17 +143,19 @@ Filter.prototype._falsePositiveRate = function () {
 Filter.prototype._getPayload = function () {
   var output = this._filter.toObject()
   output.data = output.vData
+  delete output.vData
   return output
 }
 
-Filter.prototype._maybeResize = function () {
-  if (!this._filter) return
+Filter.prototype._maybeResize = function (cb) {
+  if (!this._filter) return cb(null)
   var fpRate = this._falsePositiveRate()
   var threshold = this._resizeThreshold * this._targetFPRate
   if (fpRate - this._targetFPRate >= threshold) {
     debug(`resizing: fp=${fpRate}, target=${this._targetFPRate}`)
-    this._resize(this._error.bind(this))
+    return this._resize(cb)
   }
+  cb(null)
 }
 
 Filter.prototype._addElements = function (elements, send) {
