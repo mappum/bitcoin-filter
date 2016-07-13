@@ -22,7 +22,7 @@
   "author": "Matt Bell <mappum@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "async": "^2.0.0-rc.5",
+    "async": "^2.0.0",
     "bloom-filter": "^0.2.0",
     "debug": "^2.2.0",
     "inherits": "^2.0.1",
