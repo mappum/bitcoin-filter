@@ -47,6 +47,11 @@ Filter.prototype._error = function (err) {
   if (err) this.emit('error', err)
 }
 
+Filter.prototype.onceReady = function (cb) {
+  if (this.initialized) return cb()
+  this.once('ready', cb)
+}
+
 Filter.prototype.add = function (value, cb) {
   cb = cb || this._error.bind(this)
   var add = Buffer.isBuffer(value)
@@ -163,7 +168,11 @@ Filter.prototype._addElements = function (elements, send) {
 }
 
 Filter.prototype._resize = function (cb) {
-  this._filter = createFilter(Math.max(this._count, 100), this._targetFPRate)
+  this._filter = createFilter(
+    Math.max(this._count, 100),
+    this._targetFPRate,
+    Math.floor(Math.random() * 0xffffffff)
+  )
   this._count = 0
   this._addElements(this._elements, false)
 
